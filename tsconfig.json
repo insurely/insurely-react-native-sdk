@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "rootDir": ".",
+    "paths": {
+      "@insurely/react-native-sdk": ["./src/index"],
+      // Lets the example app's deep-import diagnostic probe
+      // (example/src/InstructionProbe.tsx) type-check against the native
+      // module directly, mirroring how Metro's monorepo config already
+      // resolves it at runtime (extraNodeModules maps the package name to
+      // this repo's root, and subpaths resolve from there).
+      "@insurely/react-native-sdk/src/*": ["./src/*"]
+    },
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "customConditions": [
+      "insurely-react-native-sdk-source",
+      "react-native-strict-api"
+    ],
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "verbatimModuleSyntax": true
+  }
+}

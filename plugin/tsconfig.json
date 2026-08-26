@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "verbatimModuleSyntax": false,
+    "declaration": false,
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "../lib/commonjs/plugin"
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["__tests__"]
+}

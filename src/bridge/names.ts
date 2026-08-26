@@ -1,0 +1,101 @@
+// Copyright © 2026 Insurely AB. All rights reserved.
+
+export const POST_MESSAGE_NAMES = [
+  'ACCOUNT_DISPLAYED',
+  'ACCOUNT_HIDDEN',
+  'ALLOW_MANUAL_SELECT',
+  'APP_CENTER',
+  'APP_CLOSE',
+  'APP_LOADED',
+  'AUTH_TOKEN_EXPIRING_SOON',
+  'CANCEL_COLLECTION_PRESSED',
+  'CHANGE_LANGUAGE',
+  'CLASSIC_QUOTE_REDIRECT',
+  'COLLECTION_GROUP_CREATED',
+  'COLLECTION_GROUP_ENDED',
+  'COLLECTION_GROUP_STARTED',
+  'COLLECTION_ID',
+  'COLLECTION_INITIATED',
+  'COLLECTION_STATUS',
+  'COMPARE_ACCEPTED',
+  'COMPARE_CAR_QUOTE_ACCEPTED',
+  'CONFIGURABLE_RESULT_BUTTON_PRESSED',
+  'CONTACT_DETAILS',
+  'DESELECTED_COMPANY',
+  'ERROR',
+  'GET_QUOTE',
+  'GET_VIEWPORT_INFO',
+  'INVALID_AUTH_TOKEN',
+  'INVALID_CREDENTIALS',
+  'INVESTMENT_TRANSFER_OPEN_NEW_ACCOUNT_REQUESTED',
+  'INVESTMENT_TRANSFER_REQUEST_PRESSED',
+  'NON_RECOVERABLE_ERROR',
+  'ONBOARDING_COMPLETED',
+  'OPEN_AUTHENTICATION_APP',
+  'OPEN_COMPANION_APP',
+  'OPEN_DANISH_MITID',
+  'OPEN_FRENCH_TRUST_ME',
+  'OPEN_SWEDISH_BANKID',
+  'PAGE_VIEW',
+  'PENSION_ADVISORY_BOOKING_REQUESTED',
+  'PENSION_ADVISORY_MEETING_REQUESTED',
+  'PENSION_MOVE_REQUEST_PRESSED',
+  'QUOTE_ERROR',
+  'REDIRECT',
+  'RESET_HASH',
+  'RESULTS',
+  'RESULTS_SELECTED_ITEM',
+  'RETURN_TO_BROWSER',
+  'SCROLL_TO_POSITION',
+  'SCROLL_TO_TOP',
+  'SELECTED_AUTHENTICATION_METHOD',
+  'SELECTED_COMPANY',
+  'SELECTED_COVERAGE_PACKAGE',
+  'SIGNING_FINISHED',
+  'SKIP_PRESSED',
+  'SUCCESSFUL_PURCHASE',
+  'SUPPLEMENTAL_INFORMATION',
+  'UPDATE_AUTH_TOKEN',
+  'VALID_AUTH_TOKEN',
+  'VIEWPORT_INFO',
+  'WAITING_FOR_INITIALIZATION',
+  'WEALTH_RESULT_SELECTED_ITEMS',
+] as const;
+
+export type PostMessageName = (typeof POST_MESSAGE_NAMES)[number];
+
+/**
+ * Routed to `onError`. QUOTE_ERROR is deliberately absent: it belongs to the
+ * compare product flow, not to SDK or session failure.
+ */
+export const ERROR_MESSAGE_NAMES = [
+  'ERROR',
+  'NON_RECOVERABLE_ERROR',
+  'INVALID_CREDENTIALS',
+  'INVALID_AUTH_TOKEN',
+] as const satisfies readonly PostMessageName[];
+
+/**
+ * Messages needing a platform capability the WebView lacks. SCROLL_TO_TOP,
+ * SCROLL_TO_POSITION and APP_CENTER are absent because mobile-bootstrap.ts
+ * handles those itself.
+ */
+export const ACTION_MESSAGE_NAMES = [
+  'OPEN_SWEDISH_BANKID',
+  'OPEN_DANISH_MITID',
+  'OPEN_FRENCH_TRUST_ME',
+  'OPEN_AUTHENTICATION_APP',
+  'OPEN_COMPANION_APP',
+  'REDIRECT',
+  'RETURN_TO_BROWSER',
+] as const satisfies readonly PostMessageName[];
+
+export type ErrorMessageName = (typeof ERROR_MESSAGE_NAMES)[number];
+
+export function isErrorMessage(name: string): name is ErrorMessageName {
+  return (ERROR_MESSAGE_NAMES as readonly string[]).includes(name);
+}
+
+export function isActionMessage(name: string): boolean {
+  return (ACTION_MESSAGE_NAMES as readonly string[]).includes(name);
+}

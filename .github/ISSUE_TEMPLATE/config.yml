@@ -1,0 +1,8 @@
+# Discussions are not enabled on this repository, and this SDK does not accept
+# outside pull requests (see LICENSE), so the only supported routes are a bug
+# report or Insurely support. The README points integrators here.
+blank_issues_enabled: true
+contact_links:
+  - name: Integration support 💬
+    url: mailto:support@insurely.com
+    about: Questions about integrating the SDK, your customerId/configName, or your Blocks configuration.

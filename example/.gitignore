@@ -1,0 +1,6 @@
+# These folders are generated with prebuild (CNG)
+android/
+ios/
+# Local credentials for the example app (see src/presets.ts)
+.env
+.env.*

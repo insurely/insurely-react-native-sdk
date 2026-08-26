@@ -1,0 +1,8 @@
+{
+  "config": {
+    "customerId": "00000000-0000-4000-8000-000000000000",
+    "configName": "example-integration",
+    "agent": { "type": "sdk" }
+  },
+  "prefill": {}
+}

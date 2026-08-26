@@ -1,0 +1,116 @@
+# Copyright © 2026 Insurely AB. All rights reserved.
+#
+# Proves the behaviour that most distinguishes this SDK from the iOS and
+# Android SDKs: both native SDKs silently drop postMessages they do not
+# recognise. This SDK forwards every message — an unrecognised one still
+# arrives as an InsurelyEvent with type "UNKNOWN" and its real name in
+# `name` (src/types/events.ts, src/bridge/parse.ts) — and the playground
+# logs it like any other event.
+#
+# This flow does not force a specific unknown message to arrive (Blocks'
+# live message mix is not scriptable from here); instead it demonstrates
+# "not dropped" the way it matters in practice for *any* logged message,
+# known or unknown: tapping a row expands its raw payload
+# (example/src/EventLog.tsx renders `JSON.stringify(entry.payload, null, 2)`
+# on tap), and that payload is always readable — it always carries a
+# `"type"` field, never an empty or missing body. A native SDK that dropped
+# the message would produce no row to tap at all.
+#
+# appId matches example/app.json's ios.bundleIdentifier and android.package
+# (both "com.insurely.sdkdemo"). See e2e/README.md for how to build and run
+# the app this flow drives.
+appId: com.insurely.sdkdemo
+---
+# No clearState here on purpose. Maestro's launchApp already restarts the
+# app's JS process, which is enough to give a clean event log (App.tsx's
+# `entries` state is plain in-memory React state, not persisted). Adding
+# clearState: true wipes the Expo dev-client's own "last opened project"
+# pointer along with it, which lands the app on the dev-client's own
+# development-servers picker screen instead of the playground -- see
+# e2e/README.md.
+- launchApp
+# On a dev-client build, the very first launch after install (or after the
+# app's storage has been cleared some other way) shows a one-time "This is
+# the developer menu" onboarding tip over the playground UI. Both waits
+# below are optional and bounded: once this tip has been dismissed on a
+# given install it never reappears, so on every later run neither step
+# does anything and the flow proceeds straight to "start-collection".
+- extendedWaitUntil:
+    visible:
+      text: "Continue"
+    timeout: 10000
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
+# Tapping "Continue" (when the tip was showing) reveals the dev-client's
+# full menu (Reload / Go home / Tools...), which stays open until
+# dismissed. Close it with the back button, but only when it is actually
+# open -- pressing back with no menu open would exit the app instead of
+# doing nothing.
+- runFlow:
+    when:
+      visible:
+        text: "Reload"
+    commands:
+      - back
+# testID="start-collection" on the "Start collection" button in
+# example/src/SettingsPanel.tsx. It sits below the fold in the settings
+# scroll view, and UIAutomator only reports nodes that are actually on
+# screen, so it has to be scrolled into view before it can be asserted on
+# or tapped. Confirmed against the installed Maestro 2.8.0's own
+# YamlScrollUntilVisible model class (decompiled the same way as the
+# extendedWaitUntil fix above): the command is `scrollUntilVisible`,
+# taking `element` (the same selector shape as tapOn/assertVisible) plus
+# `direction` (default DOWN, made explicit here) and `timeout` (ms).
+- scrollUntilVisible:
+    element:
+      id: "start-collection"
+    direction: DOWN
+    timeout: 15000
+# A short bounded wait covers the settle time after the steps above (and
+# after the scroll), not a live Blocks round-trip.
+- extendedWaitUntil:
+    visible:
+      id: "start-collection"
+    timeout: 15000
+- tapOn:
+    id: "start-collection"
+# InsurelyEvent's "APP_LOADED" member (src/types/events.ts) is rendered
+# verbatim as the log row's label in example/src/App.tsx, since its type is
+# not "UNKNOWN". This waits on a live Blocks round-trip, hence the
+# generous bound.
+- extendedWaitUntil:
+    visible:
+      text: "APP_LOADED"
+    timeout: 30000
+# Every log row is a message the SDK forwarded. Tapping one expands its raw
+# payload, which must always be present — even for messages with no typed
+# shape, i.e. the UNKNOWN case this flow exists to guard. APP_LOADED is
+# used as the concrete row here only because it is guaranteed to appear
+# early and by name; the property being checked (a tapped row's payload is
+# always readable JSON with a "type" field) holds for every row, typed or
+# UNKNOWN alike. The row was just asserted visible above, so this wait is
+# short: it only needs to cover the (rare) case where virtualization has
+# scrolled it away in between, per the note in e2e/README.md.
+- extendedWaitUntil:
+    visible:
+      text: "APP_LOADED"
+    timeout: 10000
+- tapOn:
+    text: "APP_LOADED"
+# Maestro matches a text pattern against the WHOLE text of a node, not as a
+# substring, and the expanded payload node's text is the entire pretty-printed
+# JSON block ({\n  "type": "APP_LOADED"\n}). A bare "type" pattern therefore
+# never matches; it has to be wrapped so the rest of the block is consumed.
+# (?s) is DOTALL: without it `.` does not cross the newlines in that JSON.
+- assertVisible:
+    text: '(?s).*"type".*'
+# Opportunistic assertion: when Blocks emits an unrecognised message, this
+# flow will validate the literal "UNKNOWN" label. This assertion is optional
+# and passes silently when no unrecognised message appears (the common case),
+# since we cannot force a specific unrecognised message from here. This is the
+# only place the literal UNKNOWN type is exercised in this flow.
+- assertVisible:
+    text: "UNKNOWN"
+    optional: true

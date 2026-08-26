@@ -1,0 +1,346 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn typecheck
+      - run: yarn lint
+      - run: yarn test
+      - name: Check Blocks contract drift
+        run: |
+          if ! git clone --depth 1 git@github.com:insurely/insurely-blocks.git ../insurely-blocks 2>/dev/null; then
+            echo "::warning::Blocks contract drift check did not run: insurely-blocks checkout unavailable. This gate requires a deploy key or GitHub token to function properly."
+          fi
+          yarn check-contract
+      - run: yarn prepare
+
+  # Packaged-install: the highest-value native-coverage job in this file.
+  #
+  # Every other job below (and the `build` job above) exercises the SDK from
+  # *inside* this repo, where `example/` depends on the package via a yarn
+  # workspace symlink and its config plugin is sometimes referenced by
+  # relative path. That is not how a real integrator ever consumes this
+  # package. The Critical bug that shipped (`exports` only declaring "."
+  # and "./package.json", so `@insurely/react-native-sdk/app.plugin.js` -
+  # the exact string docs/getting-started.md tells every Expo integrator to
+  # use - failed with ERR_PACKAGE_PATH_NOT_EXPORTED) survived a code review,
+  # a whole-branch review and a clean-install check specifically because no
+  # test ever installed the package by name into a fresh app. This job
+  # closes that gap: it packs a real tarball, installs it the way `npm`/
+  # `expo install` would, adds the plugin to app.json by package name, and
+  # asserts the plugin actually ran by grepping the generated native files.
+  packaged-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Build the package
+        run: yarn prepare
+      - name: Pack tarball
+        run: |
+          set -euo pipefail
+          # Do not capture `npm pack`'s stdout: the `prepare` lifecycle script
+          # writes to it too, so the substitution picks up bob's build output
+          # as well as the filename, and a multi-line value written to
+          # $GITHUB_ENV without a heredoc delimiter is rejected outright.
+          # Pack into an empty directory and glob for the result instead.
+          PACK_DIR="$RUNNER_TEMP/pack"
+          mkdir -p "$PACK_DIR"
+          npm pack --ignore-scripts --pack-destination "$PACK_DIR"
+          TARBALL_PATH="$(find "$PACK_DIR" -maxdepth 1 -name '*.tgz' | head -n1)"
+          if [ -z "$TARBALL_PATH" ]; then
+            echo "::error::npm pack produced no tarball"
+            exit 1
+          fi
+          echo "Packed $TARBALL_PATH"
+          echo "TARBALL_PATH=$TARBALL_PATH" >> "$GITHUB_ENV"
+      - name: Assert the tarball contains only what it should
+        # package.json's `files` includes whole directories, so anything that
+        # lands inside src/, ios/ or android/ ships. A publish cannot be
+        # undone after 72 hours, so this is checked before it can become
+        # permanent rather than after.
+        # Inspects the tarball the install jobs actually consume, via
+        # $TARBALL_PATH from the Pack step -- not a separate dry run that
+        # could differ from the real artifact.
+        run: node scripts/check-tarball.js "$TARBALL_PATH"
+      - name: Create a throwaway Expo app outside the repo
+        working-directory: ${{ runner.temp }}
+        run: npx --yes create-expo-app@latest scratch-app --template blank
+      - name: Install the packaged SDK by name, exactly as an integrator would
+        working-directory: ${{ runner.temp }}/scratch-app
+        run: npm install "$TARBALL_PATH" react-native-webview
+      - name: Confirm the exports map resolves the plugin entry point
+        working-directory: ${{ runner.temp }}/scratch-app
+        run: node -e "console.log(require.resolve('@insurely/react-native-sdk/app.plugin.js'))"
+      - name: Add the plugin to app.json by package name (as docs/getting-started.md instructs)
+        working-directory: ${{ runner.temp }}/scratch-app
+        run: |
+          node -e "
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          app.expo.scheme = 'scratchapp';
+          app.expo.ios = { ...app.expo.ios, bundleIdentifier: 'com.insurely.scratchapp' };
+          app.expo.android = { ...app.expo.android, package: 'com.insurely.scratchapp' };
+          app.expo.plugins = [
+            ['@insurely/react-native-sdk/app.plugin.js', { bankIdRedirectScheme: 'scratchapp' }],
+          ];
+          fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+          "
+      - name: Prebuild
+        working-directory: ${{ runner.temp }}/scratch-app
+        # --no-install skips `npm install`/`pod install`: Info.plist and
+        # AndroidManifest.xml generation is pure config-plugin templating in
+        # Node, not native compilation, so it needs neither Xcode nor
+        # CocoaPods and runs the same on this ubuntu-latest runner as it
+        # would on a Mac. Verified locally with this same flag on macOS
+        # (with Xcode/CocoaPods available but deliberately unused) to
+        # confirm --no-install alone is sufficient to produce both native
+        # projects; the flag is what makes that platform-independent, not
+        # the OS running it.
+        run: npx expo prebuild --no-install --platform all
+      - name: Assert the plugin actually ran (bankid in both native files)
+        working-directory: ${{ runner.temp }}/scratch-app
+        run: |
+          set -euo pipefail
+
+          IOS_PLIST="$(find ios -name Info.plist -not -path '*/Pods/*' | head -n1)"
+          if [ -z "$IOS_PLIST" ]; then
+            echo "::error::No Info.plist was generated under ios/ - prebuild did not produce an iOS project"
+            exit 1
+          fi
+          if ! grep -qi "bankid" "$IOS_PLIST"; then
+            echo "::error::'bankid' is missing from $IOS_PLIST - the Insurely config plugin did not run. This is exactly the failure mode that let ERR_PACKAGE_PATH_NOT_EXPORTED ship."
+            exit 1
+          fi
+          echo "OK: bankid found in $IOS_PLIST"
+
+          ANDROID_MANIFEST=android/app/src/main/AndroidManifest.xml
+          if [ ! -f "$ANDROID_MANIFEST" ]; then
+            echo "::error::No AndroidManifest.xml was generated - prebuild did not produce an Android project"
+            exit 1
+          fi
+          if ! grep -qi "bankid" "$ANDROID_MANIFEST"; then
+            echo "::error::'bankid' is missing from $ANDROID_MANIFEST - the Insurely config plugin did not run."
+            exit 1
+          fi
+          echo "OK: bankid found in $ANDROID_MANIFEST"
+      - name: Clean up scratch app
+        if: always()
+        run: rm -rf "${{ runner.temp }}/scratch-app"
+
+  # Bare React Native install: the other half of the consumption story.
+  #
+  # `packaged-install` above proves an Expo integrator can install and
+  # prebuild. Bare React Native takes a completely different path: no config
+  # plugin (it is Expo-only), and the native module is found by React
+  # Native's own autolinking rather than by Expo. Nothing had ever exercised
+  # that path - the example app is Expo, and so is every other check here -
+  # even though "works for RN teams with no native developers" includes
+  # teams that never adopted Expo.
+  #
+  # Autolinking resolves this package by convention: a *.podspec at the
+  # package root and an android/build.gradle. Note the podspec is named
+  # InsurelyHttp.podspec, not after the package, and there is no
+  # react-native.config.js to make the mapping explicit - so this job is
+  # what stands between that convention quietly breaking and a customer
+  # finding out.
+  #
+  # This is an install-and-link check, not a functional one: it never
+  # launches the app or runs a collection.
+  bare-react-native-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Build the package
+        run: yarn prepare
+      - name: Pack tarball
+        run: |
+          set -euo pipefail
+          PACK_DIR="$RUNNER_TEMP/pack-bare"
+          mkdir -p "$PACK_DIR"
+          npm pack --ignore-scripts --pack-destination "$PACK_DIR"
+          TARBALL_PATH="$(find "$PACK_DIR" -maxdepth 1 -name '*.tgz' | head -n1)"
+          if [ -z "$TARBALL_PATH" ]; then
+            echo "::error::npm pack produced no tarball"
+            exit 1
+          fi
+          echo "TARBALL_PATH=$TARBALL_PATH" >> "$GITHUB_ENV"
+      - name: Scaffold a bare React Native app outside the repo
+        working-directory: ${{ runner.temp }}
+        run: npx --yes @react-native-community/cli@latest init BareApp --skip-install --skip-git-init
+      - name: Install the packaged SDK into it
+        working-directory: ${{ runner.temp }}/BareApp
+        run: |
+          npm install
+          npm install "$TARBALL_PATH" react-native-webview
+      - name: Assert React Native autolinking resolves both platforms
+        working-directory: ${{ runner.temp }}/BareApp
+        run: |
+          set -euo pipefail
+          npx react-native config > rn-config.json
+          node -e "
+          const c = require('./rn-config.json');
+          const d = c.dependencies['@insurely/react-native-sdk'];
+          if (!d) {
+            console.error('::error::React Native autolinking did not resolve @insurely/react-native-sdk at all. A bare RN app cannot use this package.');
+            process.exit(1);
+          }
+          const ios = d.platforms?.ios?.podspecPath;
+          const android = d.platforms?.android?.sourceDir;
+          if (!ios) {
+            console.error('::error::autolinking found the package but no iOS podspec - the native module will not link on iOS');
+            process.exit(1);
+          }
+          if (!android) {
+            console.error('::error::autolinking found the package but no Android sourceDir - the native module will not link on Android');
+            process.exit(1);
+          }
+          console.log('autolinking OK: podspec and android sourceDir both resolved');
+          "
+      - name: Assert the doctor diagnoses a fresh bare project
+        working-directory: ${{ runner.temp }}/BareApp
+        # The doctor exists so a bare integrator, who gets no config plugin,
+        # is told exactly which native entries to add and where. On an
+        # untouched bare app it must report them missing and exit non-zero.
+        # Silence here would mean bare users get no guidance at the one
+        # moment they need it.
+        run: |
+          set -euo pipefail
+          if npx insurely-sdk-doctor > doctor.txt 2>&1; then
+            echo "::error::insurely-sdk-doctor reported no problems on an untouched bare app, but the BankID entries are definitely absent"
+            cat doctor.txt
+            exit 1
+          fi
+          grep -qi "bankid" doctor.txt || {
+            echo "::error::doctor exited non-zero but never mentioned bankid"; cat doctor.txt; exit 1;
+          }
+          cat doctor.txt
+      - name: Clean up
+        if: always()
+        run: rm -rf "${{ runner.temp }}/BareApp"
+
+  # Android native build: catches Kotlin/codegen breakage that no JS-only
+  # check can see. Compiles the example app's Android sources rather than
+  # producing a full APK (`:app:compileDebugKotlin` vs `assembleDebug`)
+  # because the goal is catching a broken TurboModule spec or Kotlin source
+  # change, not shipping an artifact - this is materially faster and still
+  # forces codegen to run.
+  android-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      # The example app's app.json references the plugin by package name
+      # (@insurely/react-native-sdk/app.plugin.js), which resolves through
+      # this package's `exports` map to ./lib/commonjs/plugin/withInsurely -
+      # a build output that only exists after `yarn prepare`. Skipping this
+      # step fails prebuild with an unresolvable plugin, not a silent no-op.
+      - name: Build the package (needed for the config plugin to resolve)
+        run: yarn prepare
+      - name: Prebuild the example app for Android
+        run: yarn example expo prebuild --platform android --no-install
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # React Native's Gradle plugin requires JDK 17 specifically - a
+          # newer JDK (e.g. 21+) fails the build.
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          # setup-android's default `packages` is just "tools platform-tools" -
+          # no SDK platform or build-tools are installed unless requested.
+          # These versions match what Expo 55 / RN 0.83's Gradle plugin
+          # resolves to today (confirmed locally); bump alongside future
+          # Expo/RN upgrades if compileSdkVersion moves and the build starts
+          # failing with a missing-platform error.
+          packages: 'platform-tools platforms;android-36 platforms;android-35 build-tools;36.0.0 build-tools;35.0.0'
+      # Caches the Gradle User Home (~/.gradle/caches) keyed on the wrapper
+      # and dependency files. Read-only on PR branches, read-write on main,
+      # by this action's own default - so a stale cache on a PR can't mask a
+      # real dependency-resolution failure by silently writing over it.
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile Kotlin (codegen + native module sources)
+        working-directory: example/android
+        run: ./gradlew :app:compileDebugKotlin --no-daemon
+
+  # iOS simulator build.
+  #
+  # Decision: include it, on macos-latest, simulator-only. Reasoning:
+  #
+  # - This SDK ships real native iOS source (ios/*.swift, *.m, the
+  #   InsurelyHttp.podspec). Neither the packaged-install job (which passes
+  #   --no-install specifically to *avoid* needing CocoaPods/Xcode) nor the
+  #   android-build job exercises that code at all. A broken Swift file, a
+  #   bad podspec, or an Objective-C/Swift bridging error would reach main
+  #   completely undetected without this job.
+  # - macos-latest is billed at a materially higher multiplier than
+  #   ubuntu-latest and is slower to boot, which is real cost for every PR.
+  # - The mitigation is scope: this job never touches a device or does a
+  #   release build. It reuses the example app's existing (already
+  #   authored, previously unused in CI) `build:ios` script, which builds
+  #   Debug/ONLY_ACTIVE_ARCH=YES for iphonesimulator only - no signing, no
+  #   archiving, no device provisioning.
+  # - Verdict: worth the cost. The alternative is leaving this SDK's iOS
+  #   native code with zero CI coverage, which is the same class of gap
+  #   that let the exports-map bug ship.
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Build the package (needed for the config plugin to resolve)
+        run: yarn prepare
+      - name: Prebuild the example app for iOS
+        run: yarn example expo prebuild --platform ios --no-install
+      # Caches downloaded pod sources/artifacts (not build output/DerivedData,
+      # which stays uncached so a real compile failure can never be masked
+      # by a stale cache). Keyed on the inputs that determine which pods get
+      # resolved; Podfile.lock itself doesn't exist until after `pod install`
+      # because ios/ is regenerated by prebuild on every run.
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: ${{ runner.os }}-pods-${{ hashFiles('yarn.lock', 'example/package.json', '*.podspec') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+      - name: Install pods
+        working-directory: example/ios
+        run: pod install
+      - name: Build for the simulator (no signing, no device)
+        run: yarn example build:ios

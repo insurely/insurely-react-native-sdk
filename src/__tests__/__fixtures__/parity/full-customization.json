@@ -1,0 +1,38 @@
+{
+  "config": {
+    "customerId": "00000000-0000-4000-8000-000000000000",
+    "configName": "example-integration",
+    "agent": { "type": "sdk" },
+    "language": "sv",
+    "themeMode": "system",
+    "showCloseButton": true,
+    "showBackButton": false,
+    "scrollToTopOffset": 24,
+    "customization": {
+      "logosVariant": "deBranded",
+      "theme": {
+        "colorBrand": "#0EA5E9",
+        "colorInteractive": "#0284C7",
+        "radiusButton": "8px"
+      },
+      "fonts": {
+        "headlineFont": { "webSafeFont": "arial", "weight": 700 },
+        "bodyFont": { "webSafeFont": "arial", "weight": 400 }
+      }
+    },
+    "dataAggregation": {
+      "multiSelect": true,
+      "referenceId": "parity-fixture",
+      "legalDocuments": {
+        "termsAndConditions": "https://example.com/terms",
+        "privacyPolicy": "https://example.com/privacy",
+        "cookiePolicy": "https://example.com/cookies"
+      }
+    }
+  },
+  "prefill": {
+    "user": { "swedishPersonalNumber": "199001011234" },
+    "customer": { "email": "test@example.com", "phoneNumber": "+46700000000" },
+    "dataAggregation": { "companies": ["se-swedbank"] }
+  }
+}
