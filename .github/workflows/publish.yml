@@ -4,8 +4,8 @@
 # registry is irreversible: `npm unpublish` works only within 72 hours and only
 # while nothing depends on the package. So three things stand in front of it:
 #
-#   1. the full CI suite, re-run here rather than trusted from the PR
-#   2. the `npm-publish` environment, which can require a human approval
+#   1. a reviewed pull request, which the ruleset on main requires
+#   2. the full CI suite, re-run here rather than trusted from the PR
 #   3. a guard that the tag does not already exist
 #
 # Publishing uses npm trusted publishing (OIDC), so there is no NPM_TOKEN and
@@ -13,9 +13,9 @@
 # is configured to trust this repository, this workflow file, and this
 # environment; the runner exchanges a short-lived OIDC token at publish time.
 #
-# The npmjs.com side must name this file exactly (`publish.yml`) and the
-# `npm-publish` environment. Renaming either breaks publishing until the
-# trusted-publisher config is updated to match.
+# The npmjs.com side must name this file exactly (`publish.yml`). Renaming it
+# breaks publishing until the trusted-publisher config is updated to match --
+# and that filename pin is also what stops another workflow from publishing.
 name: Release — publish
 
 on:
@@ -39,12 +39,20 @@ jobs:
     name: Publish to npm
     needs: verify
     runs-on: ubuntu-latest
-    # Configure `npm-publish` in Settings > Environments with required
-    # reviewers to put a human between a merged PR and a permanent publish.
-    # The name must match the environment registered on the npmjs.com trusted
-    # publisher, which narrows publishing rights to runs that reached this
-    # gate -- a run from any other job or workflow cannot publish.
-    environment: npm-publish
+    # Deliberately no `environment:`. Merging the release PR is the human
+    # gate -- it cannot happen without a review of the version bump and the
+    # changelog, and the ruleset on main requires all five CI checks to pass
+    # first. A second approval seconds later, by the same person on the same
+    # information, added little.
+    #
+    # Declaring an environment that does not exist is worse than declaring
+    # none: GitHub creates it silently on first use with no protection rules,
+    # so the config would imply a gate that is not there.
+    #
+    # Adding one later is a two-line change plus the Environment field on the
+    # npmjs trusted publisher -- worth doing once a second maintainer can
+    # approve, since GitHub forbids approving your own PR but allows approving
+    # your own deployment.
     permissions:
       contents: write
       # This is what authenticates the publish. npm exchanges the OIDC token
@@ -121,6 +129,11 @@ jobs:
           # the now-existing package and DELETE this secret. With the secret
           # gone this is empty and npm falls back to OIDC, so the token path
           # disappears on its own rather than lingering as a second way in.
+          #
+          # With no environment there is nowhere to scope this to, so it is a
+          # repository secret while it exists. Workflows triggered by fork PRs
+          # do not receive secrets, so it stays out of untrusted runs -- but
+          # delete it as soon as trusted publishing is configured.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         # After the bootstrap there is no token: the id-token permission above
         # lets npm exchange a short-lived OIDC credential. Provenance attestations are generated

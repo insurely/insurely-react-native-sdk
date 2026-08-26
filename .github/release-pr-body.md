@@ -10,6 +10,6 @@ Before merging:
 - [ ] The version bump matches what actually changed
 - [ ] CI is green, including both native builds and the tarball check
 
-The publish job re-runs the full CI suite before publishing, and waits on the `npm-publish` environment's reviewers.
+Merging is the gate: the publish job re-runs the full CI suite before publishing, but nothing else stands between this merge and the registry.
 
 See `CHANGELOG.md` for what is in this release.
