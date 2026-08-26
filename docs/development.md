@@ -138,13 +138,40 @@ read that correctly. `release.yml` refuses to produce a `1.0.0` unless its
 `allow_major` input is explicitly checked, so a stray `BREAKING CHANGE:`
 footer cannot leave `0.x` by accident.
 
-**Required repository configuration:**
+**Required configuration:**
 
-| Secret / setting | Why |
+Publishing uses npm **trusted publishing** (OIDC). There is no `NPM_TOKEN`:
+npm is configured to trust this repository, this workflow file and this
+environment, and the runner exchanges a short-lived credential at publish
+time. Nothing long-lived exists to rotate, leak, or lose when someone leaves
+the company.
+
+On npmjs.com, under the package's (or org's) **Trusted Publisher** settings:
+
+| Field | Value |
 | --- | --- |
-| `NPM_TOKEN` | An npm **automation** token with publish rights on the `@insurely` scope. Scope it to the `npm-publish` environment so nothing else in the repo can reach it. |
-| `npm-publish` environment | Add required reviewers to put a human between a merged PR and a permanent publish. |
+| Organization | `insurely` |
+| Repository | `insurely-react-native-sdk` |
+| Workflow filename | `publish.yml` — filename only, no path |
+| Environment | `npm-publish` |
+
+On GitHub:
+
+| Setting | Why |
+| --- | --- |
+| `npm-publish` environment | Add required reviewers to put a human between a merged PR and a permanent publish. Its name must match the trusted-publisher config above, which narrows publishing to runs that reached this gate. |
 | `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish gate still holds — you just cannot see CI on the PR itself. |
+
+**Renaming `publish.yml` or the `npm-publish` environment breaks publishing**
+until the npmjs.com config is updated to match.
+
+Provenance attestations are generated automatically when publishing this way,
+so nothing sets `NPM_CONFIG_PROVENANCE`. The attestation only becomes visible
+once the repository is public.
+
+The publish job runs Node 22 and upgrades npm before publishing: trusted
+publishing needs Node >= 22.14.0 and npm >= 11.5.1, and Node 20 ships npm 10,
+which has no OIDC support at all.
 
 The first publish of a scoped package also needs `--access public`, which
 `publish.yml` passes on every publish.
