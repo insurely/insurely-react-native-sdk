@@ -1,0 +1,111 @@
+# Step 1 of 3 — prepare a release.
+#
+# Bumps the version and regenerates the changelog from conventional commits,
+# then pushes a `release/X.Y.Z` branch. Nothing is tagged and nothing is
+# published here; release-pr.yml opens a PR from that branch, and publish.yml
+# publishes only once the PR is merged.
+#
+# main is never pushed by this workflow. The release commit reaches main only
+# through the reviewed PR.
+name: Release — prepare
+
+on:
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: 'Version bump. "auto" reads the conventional commits since the last release.'
+        type: choice
+        options: [auto, patch, minor]
+        default: auto
+      allow_major:
+        description: 'Allow leaving 0.x for 1.0.0. Leave unchecked unless that is the intent.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Bump version and push release branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # release-it derives the changelog from history, so a shallow clone
+          # would silently produce an empty or truncated one.
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Record the version we start from
+        id: before
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version and write the changelog
+        # Everything except the version bump, the changelog and the commit is
+        # switched off: no tag, no push, no publish, no GitHub release. Those
+        # belong to publish.yml, after a human has merged the PR.
+        run: |
+          yarn release-it ${{ inputs.increment == 'auto' && '' || inputs.increment }} \
+            --ci \
+            --no-git.tag \
+            --no-git.push \
+            --no-npm.publish \
+            --no-github.release
+
+      - name: Read the new version
+        id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse an accidental 1.0.0
+        # While the package is 0.x, its API is still allowed to move and npm
+        # consumers read that correctly. Leaving 0.x is a deliberate product
+        # decision, not something a conventional commit should trigger.
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          MAJOR="${NEW%%.*}"
+          if [ "$MAJOR" != "0" ] && [ "${{ inputs.allow_major }}" != "true" ]; then
+            echo "::error::Refusing to release $NEW: that leaves 0.x."
+            echo "::error::Re-run with 'allow_major' checked if this is intended."
+            exit 1
+          fi
+
+      - name: Fail if nothing changed
+        run: |
+          if [ "${{ steps.before.outputs.version }}" = "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Version is unchanged (${{ steps.version.outputs.version }})."
+            echo "::error::There is probably nothing releasable since the last release."
+            exit 1
+          fi
+
+      - name: Push the release branch
+        run: |
+          BRANCH="release/${{ steps.version.outputs.version }}"
+          git branch "$BRANCH"
+          git push origin "$BRANCH"
+
+      - name: Summary
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          {
+            echo "## Release $V prepared"
+            echo
+            echo "- **From:** ${{ steps.before.outputs.version }}"
+            echo "- **To:** $V"
+            echo "- **Branch:** \`release/$V\`"
+            echo
+            echo "A pull request will be opened automatically. Review the changelog,"
+            echo "wait for CI, then merge it — merging is what publishes to npm."
+          } >> "$GITHUB_STEP_SUMMARY"

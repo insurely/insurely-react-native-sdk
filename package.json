@@ -186,7 +186,9 @@
       "@release-it/conventional-changelog": {
         "preset": {
           "name": "angular"
-        }
+        },
+        "infile": "CHANGELOG.md",
+        "header": "# Changelog\n\nAll notable changes to `@insurely/react-native-sdk`.\n"
       }
     }
   },

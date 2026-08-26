@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets publish.yml run this exact suite as its gate, rather than a copy that
+  # can drift from it. A publish cannot be undone, so the thing standing in
+  # front of it must be the real checks.
+  workflow_call:
 jobs:
   build:
     runs-on: ubuntu-latest

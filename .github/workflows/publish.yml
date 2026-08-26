@@ -1,0 +1,150 @@
+# Step 3 of 3 — publish.
+#
+# Fires when a `release/*` PR is merged into main. Publishing to the public npm
+# registry is irreversible: `npm unpublish` works only within 72 hours and only
+# while nothing depends on the package. So three things stand in front of it:
+#
+#   1. the full CI suite, re-run here rather than trusted from the PR
+#   2. the `npm-publish` environment, which can require a human approval
+#   3. a guard that the tag does not already exist
+#
+# Publishing uses npm trusted publishing (OIDC), so there is no NPM_TOKEN and
+# no long-lived credential to rotate, leak, or lose when someone leaves. npm
+# is configured to trust this repository, this workflow file, and this
+# environment; the runner exchanges a short-lived OIDC token at publish time.
+#
+# The npmjs.com side must name this file exactly (`publish.yml`) and the
+# `npm-publish` environment. Renaming either breaks publishing until the
+# trusted-publisher config is updated to match.
+name: Release — publish
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Re-runs .github/workflows/ci.yml in full -- typecheck, lint, tests, the
+  # tarball check, the packaged and bare-RN installs, and both native builds.
+  # Calling the real workflow rather than copying its steps means this gate
+  # cannot drift away from what CI actually checks.
+  verify:
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/')
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    # Configure `npm-publish` in Settings > Environments with required
+    # reviewers to put a human between a merged PR and a permanent publish.
+    # The name must match the environment registered on the npmjs.com trusted
+    # publisher, which narrows publishing rights to runs that reached this
+    # gate -- a run from any other job or workflow cannot publish.
+    environment: npm-publish
+    permissions:
+      contents: write
+      # This is what authenticates the publish. npm exchanges the OIDC token
+      # it grants for a short-lived credential, and uses it to attach a
+      # provenance attestation tying the tarball to this repo and commit.
+      # Without it there is no way to publish at all -- there is no token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit, not the PR head -- this is what main now is.
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          # Trusted publishing requires Node >= 22.14.0 and npm >= 11.5.1.
+          # Node 20 ships npm 10, which has no OIDC support -- it would fail
+          # asking for credentials that no longer exist.
+          node-version: 22
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+      - run: corepack enable
+      - run: yarn install --immutable
+
+      - name: Ensure npm supports trusted publishing
+        run: |
+          npm install -g npm@latest
+          echo "npm $(npm --version) / node $(node --version)"
+          node -e '
+            const [maj, min, pat] = process.versions.node.split(".").map(Number);
+            if (maj < 22 || (maj === 22 && min < 14)) {
+              console.error(`::error::Node ${process.versions.node} is below the 22.14.0 that trusted publishing requires.`);
+              process.exit(1);
+            }
+          '
+
+      - name: Read the version being published
+        id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to republish an existing version
+        # npm would reject this anyway, but failing here says why, and avoids
+        # burning the environment approval on a run that cannot succeed.
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          if git rev-parse "v$V" >/dev/null 2>&1; then
+            echo "::error::Tag v$V already exists — $V looks already released."
+            exit 1
+          fi
+          if npm view "@insurely/react-native-sdk@$V" version >/dev/null 2>&1; then
+            echo "::error::@insurely/react-native-sdk@$V is already on the registry."
+            echo "::error::Published versions cannot be replaced. Cut a new version instead."
+            exit 1
+          fi
+
+      - name: Build
+        # `prepare` is bob's build. yarn install already ran it, but running it
+        # explicitly means the published artefact is built from this checkout,
+        # not from whatever install happened to leave behind.
+        run: yarn prepare
+
+      - name: Check the tarball one last time
+        # Same check CI runs. It is cheap, and this is the final moment before
+        # the contents become permanent.
+        run: yarn check-tarball
+
+      - name: Publish
+        # No token: the id-token permission above lets npm exchange a
+        # short-lived OIDC credential. Provenance attestations are generated
+        # automatically when publishing this way, so NPM_CONFIG_PROVENANCE is
+        # not set -- though the attestation itself only appears once the
+        # repository is public.
+        #
+        # --access public stays: scoped packages default to restricted.
+        run: npm publish --access public
+
+      - name: Tag the release
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$V" -m "v$V"
+          git push origin "v$V"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          gh release create "v$V" \
+            --title "v$V" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the changes in this release."
+
+      - name: Summary
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          {
+            echo "## Published @insurely/react-native-sdk@$V"
+            echo
+            echo "- https://www.npmjs.com/package/@insurely/react-native-sdk/v/$V"
+            echo "- Tagged \`v$V\`"
+          } >> "$GITHUB_STEP_SUMMARY"
