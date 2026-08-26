@@ -1,0 +1,64 @@
+# Step 2 of 3 — open the release PR.
+#
+# Fires when release.yml pushes a `release/X.Y.Z` branch. Opens a PR to main
+# so the version bump and changelog get reviewed before anything is published.
+#
+# The guard matters: this only opens a PR when the branch changes nothing but
+# the version and the changelog. A release branch carrying source changes is
+# refused, because merging it would publish code that never went through a
+# normal review.
+name: Release — open PR
+
+on:
+  push:
+    branches: ['release/**']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: Open the release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the branch changes only the version and changelog
+        run: |
+          CHANGED="$(git diff --name-only origin/main...HEAD)"
+          echo "Changed files:"
+          echo "$CHANGED" | sed 's/^/  /'
+
+          UNEXPECTED="$(echo "$CHANGED" | grep -vE '^(package\.json|CHANGELOG\.md)$' || true)"
+          if [ -n "$UNEXPECTED" ]; then
+            echo "::error::A release branch must change only package.json and CHANGELOG.md."
+            echo "::error::Unexpected: $(echo "$UNEXPECTED" | tr '\n' ' ')"
+            echo "::error::Land source changes through a normal PR first, then cut the release."
+            exit 1
+          fi
+
+      - name: Open the pull request
+        env:
+          # A PR opened with the default GITHUB_TOKEN does not trigger other
+          # workflows, so CI would never run on it and the PR would show no
+          # checks. RELEASE_GITHUB_TOKEN (a PAT) avoids that. publish.yml runs
+          # the full suite itself either way, so a missing PAT degrades the
+          # review experience without weakening the gate.
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#release/}"
+          sed "s/__VERSION__/$VERSION/g" .github/release-pr-body.md > "$RUNNER_TEMP/body.md"
+          gh pr create \
+            --base main \
+            --head "$GITHUB_REF_NAME" \
+            --title "release: $VERSION" \
+            --body-file "$RUNNER_TEMP/body.md"
+
+      - name: Summary
+        run: |
+          echo "## Release PR opened for ${GITHUB_REF_NAME#release/}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Merging it publishes to npm." >> "$GITHUB_STEP_SUMMARY"

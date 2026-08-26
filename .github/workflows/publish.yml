@@ -1,0 +1,123 @@
+# Step 3 of 3 — publish.
+#
+# Fires when a `release/*` PR is merged into main. Publishing to the public npm
+# registry is irreversible: `npm unpublish` works only within 72 hours and only
+# while nothing depends on the package. So three things stand in front of it:
+#
+#   1. the full CI suite, re-run here rather than trusted from the PR
+#   2. the `npm-publish` environment, which can require a human approval
+#   3. a guard that the tag does not already exist
+#
+# Only after all three does the token get used.
+name: Release — publish
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Re-runs .github/workflows/ci.yml in full -- typecheck, lint, tests, the
+  # tarball check, the packaged and bare-RN installs, and both native builds.
+  # Calling the real workflow rather than copying its steps means this gate
+  # cannot drift away from what CI actually checks.
+  verify:
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/')
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    # Configure `npm-publish` in Settings > Environments with required
+    # reviewers to put a human between a merged PR and a permanent publish.
+    # NPM_TOKEN should be scoped to this environment, so nothing else in the
+    # repository can reach it.
+    environment: npm-publish
+    permissions:
+      contents: write
+      # Lets npm attach a provenance attestation tying the tarball to this
+      # repository and commit.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit, not the PR head -- this is what main now is.
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+      - run: corepack enable
+      - run: yarn install --immutable
+
+      - name: Read the version being published
+        id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to republish an existing version
+        # npm would reject this anyway, but failing here says why, and avoids
+        # burning the environment approval on a run that cannot succeed.
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          if git rev-parse "v$V" >/dev/null 2>&1; then
+            echo "::error::Tag v$V already exists — $V looks already released."
+            exit 1
+          fi
+          if npm view "@insurely/react-native-sdk@$V" version >/dev/null 2>&1; then
+            echo "::error::@insurely/react-native-sdk@$V is already on the registry."
+            echo "::error::Published versions cannot be replaced. Cut a new version instead."
+            exit 1
+          fi
+
+      - name: Build
+        # `prepare` is bob's build. yarn install already ran it, but running it
+        # explicitly means the published artefact is built from this checkout,
+        # not from whatever install happened to leave behind.
+        run: yarn prepare
+
+      - name: Check the tarball one last time
+        # Same check CI runs. It is cheap, and this is the final moment before
+        # the contents become permanent.
+        run: yarn check-tarball
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+        # --access public is required on every publish of a scoped package;
+        # scoped packages default to restricted.
+        run: npm publish --access public
+
+      - name: Tag the release
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$V" -m "v$V"
+          git push origin "v$V"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          gh release create "v$V" \
+            --title "v$V" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the changes in this release."
+
+      - name: Summary
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          {
+            echo "## Published @insurely/react-native-sdk@$V"
+            echo
+            echo "- https://www.npmjs.com/package/@insurely/react-native-sdk/v/$V"
+            echo "- Tagged \`v$V\`"
+          } >> "$GITHUB_STEP_SUMMARY"

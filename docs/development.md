@@ -109,13 +109,48 @@ Our pre-commit hooks verify that your commit message matches this format when co
 
 ### Publishing to npm
 
-We use [release-it](https://github.com/release-it/release-it) to make it easier to publish new versions. It handles common tasks like bumping version based on semver, creating tags and releases etc.
+Releases go through GitHub Actions, not from a laptop. Publishing to the public
+npm registry is irreversible — `npm unpublish` works only within 72 hours and
+only while nothing depends on the package — so the flow puts a reviewed pull
+request in front of it.
 
-To publish new versions, run the following:
+Three workflows, chained by branch name:
 
-```sh
-yarn release
-```
+1. **`Release — prepare`** (`release.yml`) — run it manually from the Actions
+   tab. It bumps the version and regenerates `CHANGELOG.md` from the
+   conventional commits since the last release, then pushes a
+   `release/X.Y.Z` branch. `main` is never pushed by it.
+2. **`Release — open PR`** (`release-pr.yml`) — fires on that push and opens a
+   PR to `main`. It refuses to open one if the branch changes anything beyond
+   `package.json` and `CHANGELOG.md`: source changes must land through a normal
+   review first, then be released.
+3. **`Release — publish`** (`publish.yml`) — fires when that PR is **merged**.
+   It re-runs the whole CI suite (calling `ci.yml` rather than copying it, so
+   the gate cannot drift), waits for the `npm-publish` environment's reviewers,
+   refuses to republish an existing version, then publishes, tags `vX.Y.Z` and
+   creates the GitHub release.
+
+So: run the workflow, review the changelog on the PR, merge it. Merging is
+what publishes.
+
+The package is `0.x` on purpose — the API may still move, and npm consumers
+read that correctly. `release.yml` refuses to produce a `1.0.0` unless its
+`allow_major` input is explicitly checked, so a stray `BREAKING CHANGE:`
+footer cannot leave `0.x` by accident.
+
+**Required repository configuration:**
+
+| Secret / setting | Why |
+| --- | --- |
+| `NPM_TOKEN` | An npm **automation** token with publish rights on the `@insurely` scope. Scope it to the `npm-publish` environment so nothing else in the repo can reach it. |
+| `npm-publish` environment | Add required reviewers to put a human between a merged PR and a permanent publish. |
+| `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish gate still holds — you just cannot see CI on the PR itself. |
+
+The first publish of a scoped package also needs `--access public`, which
+`publish.yml` passes on every publish.
+
+`yarn release` still runs release-it locally, but should only be used for a
+dry run (`yarn release-it --dry-run`). Do not publish from a laptop.
 
 
 ### Scripts
