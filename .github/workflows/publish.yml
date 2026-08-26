@@ -113,14 +113,33 @@ jobs:
         run: yarn check-tarball
 
       - name: Publish
-        # No token: the id-token permission above lets npm exchange a
-        # short-lived OIDC credential. Provenance attestations are generated
+        env:
+          # Bootstrap only. npm's trusted-publisher config lives under package
+          # settings, so it cannot be created for a package that does not
+          # exist yet -- there is no pending-publisher flow. The first release
+          # therefore needs a token; after it, configure trusted publishing on
+          # the now-existing package and DELETE this secret. With the secret
+          # gone this is empty and npm falls back to OIDC, so the token path
+          # disappears on its own rather than lingering as a second way in.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # After the bootstrap there is no token: the id-token permission above
+        # lets npm exchange a short-lived OIDC credential. Provenance attestations are generated
         # automatically when publishing this way, so NPM_CONFIG_PROVENANCE is
         # not set -- though the attestation itself only appears once the
         # repository is public.
         #
         # --access public stays: scoped packages default to restricted.
-        run: npm publish --access public
+        #
+        # The scoped --@insurely:registry flag is not redundant. For a scoped
+        # package, an `@scope:registry` line in any .npmrc beats both
+        # publishConfig.registry AND an explicit --registry flag; only the
+        # scoped flag overrides it. Insurely laptops map @insurely to GitHub
+        # Packages for @insurely/ui, so without this a publish run anywhere
+        # that config exists would go to the wrong registry and say so only in
+        # a notice line. Runners are clean today; this keeps it true.
+        run: |
+          npm publish --access public \
+            --@insurely:registry=https://registry.npmjs.org/
 
       - name: Tag the release
         run: |
