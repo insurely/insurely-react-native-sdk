@@ -164,7 +164,7 @@ On GitHub:
 | Setting | Why |
 | --- | --- |
 | Ruleset on `main` | Requires a pull request and all five CI checks before anything merges, and blocks force-pushes and deletion. This is what makes merging the release PR a real gate. |
-| `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish still runs its own full CI — you just cannot see checks on the PR itself. |
+| `RELEASE_GITHUB_TOKEN` | **Not required.** An optional PAT, only if you would rather the release PR were opened by a user than by the bot. GitHub ignores workflow triggers caused by its own `GITHUB_TOKEN`, so a bot-opened PR does not start CI on its own — `release-pr.yml` works around that by dispatching `ci.yml` onto the release branch directly, which is the one event the default token may trigger. No personal credential is needed anywhere in the release flow. |
 
 **Renaming `publish.yml` breaks publishing** until the npmjs.com config is
 updated to match. That filename pin is also what stops some other workflow
