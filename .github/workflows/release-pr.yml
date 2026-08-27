@@ -16,6 +16,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # Needed to dispatch CI onto the release branch -- see the last step.
+  actions: write
 
 jobs:
   open-pr:
@@ -42,23 +44,57 @@ jobs:
 
       - name: Open the pull request
         env:
-          # A PR opened with the default GITHUB_TOKEN does not trigger other
-          # workflows, so CI would never run on it and the PR would show no
-          # checks. RELEASE_GITHUB_TOKEN (a PAT) avoids that. publish.yml runs
-          # the full suite itself either way, so a missing PAT degrades the
-          # review experience without weakening the gate.
           GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#release/}"
-          sed "s/__VERSION__/$VERSION/g" .github/release-pr-body.md > "$RUNNER_TEMP/body.md"
-          gh pr create \
-            --base main \
-            --head "$GITHUB_REF_NAME" \
-            --title "release: $VERSION" \
-            --body-file "$RUNNER_TEMP/body.md"
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+
+          # Idempotent: a second push to this branch re-runs this workflow,
+          # and `gh pr create` fails when a PR already exists. Failing here
+          # would skip the CI dispatch below, leaving the PR showing checks
+          # for a commit that is no longer its head -- stale checks and a red
+          # workflow. So create only when there is nothing open.
+          EXISTING="$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open for $GITHUB_REF_NAME; leaving it as is."
+          else
+            sed "s/__VERSION__/$VERSION/g" .github/release-pr-body.md > "$RUNNER_TEMP/body.md"
+            gh pr create \
+              --base main \
+              --head "$GITHUB_REF_NAME" \
+              --title "release: $VERSION" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+      - name: Run CI on the release branch
+        # GitHub ignores workflow triggers caused by its own GITHUB_TOKEN, so
+        # opening the PR above does not start CI. The ruleset on main requires
+        # all five checks before a merge, so without this the release PR would
+        # sit permanently unmergeable.
+        #
+        # workflow_dispatch is the documented exception to that rule: it is
+        # the one event the default token may trigger. The run targets this
+        # branch, whose head is the PR's head, so the checks land on the PR
+        # exactly as an automatic run would -- and no personal access token
+        # has to exist for any of it.
+        #
+        # This runs whichever path the step above took, so a second push
+        # refreshes the checks against the new head instead of leaving the
+        # first run's checks attached to a stale commit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ci.yml --ref "$GITHUB_REF_NAME"
+          echo "Dispatched CI against $GITHUB_REF_NAME"
 
       - name: Summary
         run: |
-          echo "## Release PR opened for ${GITHUB_REF_NAME#release/}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Merging it publishes to npm." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Release PR ready for ${GITHUB_REF_NAME#release/}"
+            echo
+            echo "CI has been dispatched against \`$GITHUB_REF_NAME\`; its checks"
+            echo "will appear on the PR shortly."
+            echo
+            echo "Review the changelog, wait for the checks, then merge."
+            echo "**Merging is what publishes to npm.**"
+          } >> "$GITHUB_STEP_SUMMARY"

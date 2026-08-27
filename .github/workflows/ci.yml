@@ -7,6 +7,12 @@ on:
   # can drift from it. A publish cannot be undone, so the thing standing in
   # front of it must be the real checks.
   workflow_call:
+  # Lets release-pr.yml dispatch this onto a release branch. GitHub ignores
+  # workflow triggers caused by its own GITHUB_TOKEN, so a release PR opened
+  # by a workflow never starts CI on its own -- and the ruleset on main will
+  # not allow a merge without these checks. workflow_dispatch is the
+  # documented exception the default token may trigger.
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest

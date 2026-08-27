@@ -132,10 +132,15 @@ Three workflows, chained by branch name:
 So: run the workflow, review the changelog on the PR, merge it. Merging is
 what publishes.
 
-The package is `0.x` on purpose — the API may still move, and npm consumers
-read that correctly. `release.yml` refuses to produce a `1.0.0` unless its
-`allow_major` input is explicitly checked, so a stray `BREAKING CHANGE:`
-footer cannot leave `0.x` by accident.
+A major bump is a product decision, not something a stray `BREAKING CHANGE:`
+footer should trigger, so `release.yml` refuses one unless its `allow_major`
+input is explicitly checked. That applies both to leaving `0.x` — where the
+API is still allowed to move and npm consumers read that correctly — and to
+any later major, where consumers must act to upgrade.
+
+Note what `1.0.0` commits you to: under semver, every breaking change after
+it needs the next major. While the surface is still settling, `0.x` is the
+honest signal.
 
 **Required configuration:**
 
@@ -159,7 +164,7 @@ On GitHub:
 | Setting | Why |
 | --- | --- |
 | Ruleset on `main` | Requires a pull request and all five CI checks before anything merges, and blocks force-pushes and deletion. This is what makes merging the release PR a real gate. |
-| `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish still runs its own full CI — you just cannot see checks on the PR itself. |
+| `RELEASE_GITHUB_TOKEN` | **Not required.** An optional PAT, only if you would rather the release PR were opened by a user than by the bot. GitHub ignores workflow triggers caused by its own `GITHUB_TOKEN`, so a bot-opened PR does not start CI on its own — `release-pr.yml` works around that by dispatching `ci.yml` onto the release branch directly, which is the one event the default token may trigger. No personal credential is needed anywhere in the release flow. |
 
 **Renaming `publish.yml` breaks publishing** until the npmjs.com config is
 updated to match. That filename pin is also what stops some other workflow
