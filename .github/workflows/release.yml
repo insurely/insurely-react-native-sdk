@@ -23,7 +23,15 @@ on:
         default: false
 
 permissions:
+  # contents: push the release branch.
+  # pull-requests: open the release PR.
+  # actions: dispatch ci.yml onto that branch.
+  # All three are needed because this workflow now does the whole prepare
+  # step itself; the repository default is read-only, so anything missing
+  # here fails at the step that needs it.
   contents: write
+  pull-requests: write
+  actions: write
 
 jobs:
   prepare:
