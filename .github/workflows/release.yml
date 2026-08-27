@@ -15,10 +15,10 @@ on:
       increment:
         description: 'Version bump. "auto" reads the conventional commits since the last release.'
         type: choice
-        options: [auto, patch, minor]
+        options: [auto, patch, minor, major]
         default: auto
       allow_major:
-        description: 'Allow leaving 0.x for 1.0.0. Leave unchecked unless that is the intent.'
+        description: 'Required to leave 0.x, or to bump an existing major. Semver then binds you: any later breaking change needs the next major.'
         type: boolean
         default: false
 
@@ -69,15 +69,18 @@ jobs:
         id: version
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
-      - name: Refuse an accidental 1.0.0
-        # While the package is 0.x, its API is still allowed to move and npm
-        # consumers read that correctly. Leaving 0.x is a deliberate product
-        # decision, not something a conventional commit should trigger.
+      - name: Refuse an unintended major bump
+        # A major bump is a product decision, not something a stray
+        # `BREAKING CHANGE:` footer should be able to trigger. This catches
+        # both directions: leaving 0.x, where the API is still allowed to
+        # move, and any later major, where consumers must act to upgrade.
         run: |
+          OLD="${{ steps.before.outputs.version }}"
           NEW="${{ steps.version.outputs.version }}"
-          MAJOR="${NEW%%.*}"
-          if [ "$MAJOR" != "0" ] && [ "${{ inputs.allow_major }}" != "true" ]; then
-            echo "::error::Refusing to release $NEW: that leaves 0.x."
+          OLD_MAJOR="${OLD%%.*}"
+          NEW_MAJOR="${NEW%%.*}"
+          if [ "$OLD_MAJOR" != "$NEW_MAJOR" ] && [ "${{ inputs.allow_major }}" != "true" ]; then
+            echo "::error::Refusing to release $NEW: that is a major bump from $OLD."
             echo "::error::Re-run with 'allow_major' checked if this is intended."
             exit 1
           fi
