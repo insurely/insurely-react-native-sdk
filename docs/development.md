@@ -119,8 +119,7 @@ Three workflows, chained by branch name:
 1. **`Release — prepare`** (`release.yml`) — run it manually from the Actions
    tab. It bumps the version and regenerates `CHANGELOG.md` from the
    conventional commits since the last release, pushes a `release/X.Y.Z`
-   branch, opens the pull request, and dispatches CI onto it. `main` is never
-   pushed by it.
+   branch and opens the pull request. `main` is never pushed by it.
 2. **`Release — open PR`** (`release-pr.yml`) — a fallback for a release
    branch pushed by a person rather than by the workflow. It refuses to open a
    PR if the branch changes anything beyond `package.json` and `CHANGELOG.md`:
@@ -152,17 +151,33 @@ produces a tree identical to that branch's own tree only when nothing else
 landed, so the two are compared and the publish refuses if they differ. The
 practical rule: while a release PR is open, do not merge anything else.
 
-So: run the workflow, review the changelog on the PR, merge it. Merging is
-what publishes.
+**The release PR needs its checks approved before they run.** It is authored
+by `github-actions[bot]`, which is not a repository collaborator, and GitHub
+requires a maintainer to approve workflow runs on such PRs. Open the PR and
+click **Approve and run**; the five checks then run as they do on any other
+PR, and the ruleset on `main` will allow the merge once they are green.
 
-Two consequences of one GitHub rule are worth knowing, because they explain
-most of the shape above: **GitHub ignores workflow triggers caused by its own
-`GITHUB_TOKEN`.** A branch a workflow pushes fires nothing, and a PR a
-workflow opens starts no checks. That is why `release.yml` opens the PR
-itself instead of relying on the push, and why it dispatches `ci.yml`
-explicitly — `workflow_dispatch` is the documented exception, the one event
-the default token may trigger. Both workarounds exist so that no personal
-access token has to.
+That click is the one manual step in the flow. It can be removed by having
+the PR opened by a real account instead of the bot — a PAT in
+`RELEASE_GITHUB_TOKEN` (what `@insurely/ui` does) or, better for bus factor,
+a GitHub App minting a token per run. Neither is set up today, and the
+approval is a reasonable checkpoint in the meantime.
+
+So: run the workflow, approve the checks, review the changelog, merge.
+Merging is what publishes.
+
+One GitHub rule explains most of the shape above: **GitHub ignores workflow
+triggers caused by its own `GITHUB_TOKEN`.** A branch a workflow pushes fires
+nothing, which is why `release.yml` opens the PR itself rather than relying
+on the push event.
+
+An earlier version also dispatched `ci.yml` onto the release branch, on the
+theory that `workflow_dispatch` — the one event the default token may trigger
+— would supply the PR's checks. It does not: those runs attach their checks
+to the commit but never join the PR's status rollup, which is what the
+ruleset reads. The PR stayed blocked with five green checks sitting on its
+head commit. The dispatch was removed rather than left running CI a second
+time for nothing.
 
 A major bump is a product decision, not something a stray `BREAKING CHANGE:`
 footer should trigger, so `release.yml` refuses one unless its `allow_major`
