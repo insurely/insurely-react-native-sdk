@@ -128,8 +128,29 @@ Three workflows, chained by branch name:
    Both paths share a create-or-skip check, so they cannot open duplicates.
 3. **`Release — publish`** (`publish.yml`) — fires when that PR is **merged**.
    It re-runs the whole CI suite (calling `ci.yml` rather than copying it, so
-   the gate cannot drift), refuses to republish an existing version, then
-   publishes, tags `vX.Y.Z` and creates the GitHub release.
+   the gate cannot drift), checks that nothing merged into `main` behind the
+   release, refuses to republish an existing version, then publishes, tags
+   `vX.Y.Z` and creates the GitHub release.
+
+### If the publish fails
+
+Nothing has been published and no tag was created — the tag is written after
+a successful publish, deliberately. `main` does carry the version bump and
+the changelog, and `main` cannot be rewritten.
+
+Recovery is to run **`Release — prepare`** again. It bumps from the version
+now on `main` to the next one and regenerates the changelog covering
+everything since, including whatever caused the failure. Merge that PR and it
+publishes. The version that failed is simply skipped: it was never published,
+so the number is free to abandon, and npm never sees a gap.
+
+The most likely failure is the changelog-coverage check. `publish.yml`
+publishes from `main`, but the changelog was generated when
+`Release — prepare` ran — so anything merged in between would ship inside the
+version without appearing in its changelog. Merging the release branch
+produces a tree identical to that branch's own tree only when nothing else
+landed, so the two are compared and the publish refuses if they differ. The
+practical rule: while a release PR is open, do not merge anything else.
 
 So: run the workflow, review the changelog on the PR, merge it. Merging is
 what publishes.

@@ -35,9 +35,50 @@ jobs:
     if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/')
     uses: ./.github/workflows/ci.yml
 
+  # Runs alongside verify so a mismatch is caught in seconds rather than after
+  # the full native-build suite.
+  #
+  # publish.yml checks out main, so it ships whatever main holds when it runs.
+  # The changelog, though, was generated back when `Release -- prepare` ran.
+  # Anything merged in between would be published inside this version without
+  # appearing in its changelog -- the version, the changelog and the tarball
+  # would disagree, and nothing else would notice: the release PR's checks ran
+  # on the release branch, before that code existed.
+  #
+  # Merging the release branch produces a tree identical to the branch's own
+  # tree only when nothing else landed in between. So compare them.
+  changelog-covers-what-ships:
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/')
+    name: Check nothing merged behind the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Compare the published tree against the reviewed one
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          if git diff --quiet "$HEAD_SHA" HEAD; then
+            echo "main matches the reviewed release branch; the changelog covers what ships."
+            exit 0
+          fi
+
+          echo "::error::Something merged into main after this release was prepared."
+          echo "::error::These files differ from what was reviewed and changelogged:"
+          git diff --name-only "$HEAD_SHA" HEAD | sed 's/^/::error::  /'
+          echo "::error::"
+          echo "::error::Nothing has been published and no tag was created."
+          echo "::error::To recover: run 'Release -- prepare' again. It will bump to the"
+          echo "::error::next version and regenerate the changelog covering these commits"
+          echo "::error::too. Merging that PR publishes. The version prepared here is"
+          echo "::error::simply skipped -- it was never published, so the number is free"
+          echo "::error::to abandon."
+          exit 1
+
   publish:
     name: Publish to npm
-    needs: verify
+    needs: [verify, changelog-covers-what-ships]
     runs-on: ubuntu-latest
     # Deliberately no `environment:`. Merging the release PR is the human
     # gate -- it cannot happen without a review of the version bump and the
