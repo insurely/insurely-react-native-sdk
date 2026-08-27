@@ -118,19 +118,51 @@ Three workflows, chained by branch name:
 
 1. **`Release — prepare`** (`release.yml`) — run it manually from the Actions
    tab. It bumps the version and regenerates `CHANGELOG.md` from the
-   conventional commits since the last release, then pushes a
-   `release/X.Y.Z` branch. `main` is never pushed by it.
-2. **`Release — open PR`** (`release-pr.yml`) — fires on that push and opens a
-   PR to `main`. It refuses to open one if the branch changes anything beyond
-   `package.json` and `CHANGELOG.md`: source changes must land through a normal
-   review first, then be released.
+   conventional commits since the last release, pushes a `release/X.Y.Z`
+   branch, opens the pull request, and dispatches CI onto it. `main` is never
+   pushed by it.
+2. **`Release — open PR`** (`release-pr.yml`) — a fallback for a release
+   branch pushed by a person rather than by the workflow. It refuses to open a
+   PR if the branch changes anything beyond `package.json` and `CHANGELOG.md`:
+   source changes must land through a normal review first, then be released.
+   Both paths share a create-or-skip check, so they cannot open duplicates.
 3. **`Release — publish`** (`publish.yml`) — fires when that PR is **merged**.
    It re-runs the whole CI suite (calling `ci.yml` rather than copying it, so
-   the gate cannot drift), refuses to republish an existing version, then
-   publishes, tags `vX.Y.Z` and creates the GitHub release.
+   the gate cannot drift), checks that nothing merged into `main` behind the
+   release, refuses to republish an existing version, then publishes, tags
+   `vX.Y.Z` and creates the GitHub release.
+
+### If the publish fails
+
+Nothing has been published and no tag was created — the tag is written after
+a successful publish, deliberately. `main` does carry the version bump and
+the changelog, and `main` cannot be rewritten.
+
+Recovery is to run **`Release — prepare`** again. It bumps from the version
+now on `main` to the next one and regenerates the changelog covering
+everything since, including whatever caused the failure. Merge that PR and it
+publishes. The version that failed is simply skipped: it was never published,
+so the number is free to abandon, and npm never sees a gap.
+
+The most likely failure is the changelog-coverage check. `publish.yml`
+publishes from `main`, but the changelog was generated when
+`Release — prepare` ran — so anything merged in between would ship inside the
+version without appearing in its changelog. Merging the release branch
+produces a tree identical to that branch's own tree only when nothing else
+landed, so the two are compared and the publish refuses if they differ. The
+practical rule: while a release PR is open, do not merge anything else.
 
 So: run the workflow, review the changelog on the PR, merge it. Merging is
 what publishes.
+
+Two consequences of one GitHub rule are worth knowing, because they explain
+most of the shape above: **GitHub ignores workflow triggers caused by its own
+`GITHUB_TOKEN`.** A branch a workflow pushes fires nothing, and a PR a
+workflow opens starts no checks. That is why `release.yml` opens the PR
+itself instead of relying on the push, and why it dispatches `ci.yml`
+explicitly — `workflow_dispatch` is the documented exception, the one event
+the default token may trigger. Both workarounds exist so that no personal
+access token has to.
 
 A major bump is a product decision, not something a stray `BREAKING CHANGE:`
 footer should trigger, so `release.yml` refuses one unless its `allow_major`
