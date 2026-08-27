@@ -126,9 +126,8 @@ Three workflows, chained by branch name:
    review first, then be released.
 3. **`Release — publish`** (`publish.yml`) — fires when that PR is **merged**.
    It re-runs the whole CI suite (calling `ci.yml` rather than copying it, so
-   the gate cannot drift), waits for the `npm-publish` environment's reviewers,
-   refuses to republish an existing version, then publishes, tags `vX.Y.Z` and
-   creates the GitHub release.
+   the gate cannot drift), refuses to republish an existing version, then
+   publishes, tags `vX.Y.Z` and creates the GitHub release.
 
 So: run the workflow, review the changelog on the PR, merge it. Merging is
 what publishes.
@@ -153,17 +152,25 @@ On npmjs.com, under the package's (or org's) **Trusted Publisher** settings:
 | Organization | `insurely` |
 | Repository | `insurely-react-native-sdk` |
 | Workflow filename | `publish.yml` — filename only, no path |
-| Environment | `npm-publish` |
+| Environment | leave blank |
 
 On GitHub:
 
 | Setting | Why |
 | --- | --- |
-| `npm-publish` environment | Add required reviewers to put a human between a merged PR and a permanent publish. Its name must match the trusted-publisher config above, which narrows publishing to runs that reached this gate. |
-| `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish gate still holds — you just cannot see CI on the PR itself. |
+| Ruleset on `main` | Requires a pull request and all five CI checks before anything merges, and blocks force-pushes and deletion. This is what makes merging the release PR a real gate. |
+| `RELEASE_GITHUB_TOKEN` | Optional PAT. A PR opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI would not run on the release PR. Without it the publish still runs its own full CI — you just cannot see checks on the PR itself. |
 
-**Renaming `publish.yml` or the `npm-publish` environment breaks publishing**
-until the npmjs.com config is updated to match.
+**Renaming `publish.yml` breaks publishing** until the npmjs.com config is
+updated to match. That filename pin is also what stops some other workflow
+from publishing.
+
+There is deliberately no deployment environment: merging the release PR is
+the human gate, and a second approval seconds later by the same person added
+little. Worth revisiting once a second maintainer exists — GitHub forbids
+approving your own PR but allows approving your own deployment, so an
+environment becomes the gate that works when the ruleset's approval count
+goes above zero.
 
 Provenance attestations are generated automatically when publishing this way,
 so nothing sets `NPM_CONFIG_PROVENANCE`. The attestation only becomes visible
