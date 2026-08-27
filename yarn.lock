@@ -2845,9 +2845,13 @@ __metadata:
     typescript: "npm:^6.0.3"
     zod: "npm:^4.4.3"
   peerDependencies:
+    "@expo/config-plugins": "*"
     react: ">=18.0.0"
     react-native: ">=0.76.0"
     react-native-webview: "*"
+  peerDependenciesMeta:
+    "@expo/config-plugins":
+      optional: true
   bin:
     insurely-sdk-doctor: bin/insurely-sdk-doctor.js
   languageName: unknown
