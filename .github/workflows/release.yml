@@ -23,15 +23,11 @@ on:
         default: false
 
 permissions:
-  # contents: push the release branch.
-  # pull-requests: open the release PR.
-  # actions: dispatch ci.yml onto that branch.
-  # All three are needed because this workflow now does the whole prepare
-  # step itself; the repository default is read-only, so anything missing
-  # here fails at the step that needs it.
+  # contents: push the release branch.  pull-requests: open the release PR.
+  # The repository default is read-only, so anything missing here fails at
+  # the step that needs it.
   contents: write
   pull-requests: write
-  actions: write
 
 jobs:
   prepare:
@@ -107,17 +103,16 @@ jobs:
           git branch "$BRANCH"
           git push origin "$BRANCH"
 
-      - name: Open the release PR and start CI on it
+      - name: Open the release PR
         # This used to be release-pr.yml's job, triggered by the push above.
         # It never fired: GitHub ignores workflow triggers caused by its own
         # GITHUB_TOKEN, so a branch pushed by this workflow starts nothing.
-        # The release branch appeared and then nothing happened.
+        # Opening the PR here removes the dependency on that event.
         #
-        # Doing it here removes the dependency on that event entirely. The
-        # `gh workflow run` call is the documented exception to the same rule
-        # -- the one event the default token may trigger -- and it is what
-        # puts the required checks on the PR so the ruleset on main will allow
-        # a merge.
+        # The PR is authored by github-actions[bot], which is not a repository
+        # collaborator, so its workflow runs wait for a maintainer to click
+        # "Approve and run" on the PR. That approval is the point at which CI
+        # starts -- see docs/development.md.
         #
         # release-pr.yml still exists for a release branch pushed by a person,
         # where the push event does fire; its create-or-skip check keeps the
@@ -140,9 +135,6 @@ jobs:
               --body-file "$RUNNER_TEMP/body.md"
           fi
 
-          gh workflow run ci.yml --ref "$BRANCH"
-          echo "Dispatched CI against $BRANCH"
-
       - name: Summary
         run: |
           V="${{ steps.version.outputs.version }}"
@@ -153,7 +145,10 @@ jobs:
             echo "- **To:** $V"
             echo "- **Branch:** \`release/$V\`"
             echo
-            echo "A pull request has been opened and CI dispatched against it."
-            echo "Review the changelog, wait for the checks, then merge —"
+            echo "A pull request has been opened."
+            echo
+            echo "Its checks wait for approval, because the PR is authored by"
+            echo "github-actions[bot]: open it and click **Approve and run**."
+            echo "Then review the changelog, wait for the checks, and merge —"
             echo "**merging is what publishes to npm.**"
           } >> "$GITHUB_STEP_SUMMARY"

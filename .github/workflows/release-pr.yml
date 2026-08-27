@@ -21,8 +21,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  # Needed to dispatch CI onto the release branch -- see the last step.
-  actions: write
 
 jobs:
   open-pr:
@@ -70,27 +68,6 @@ jobs:
               --title "release: $VERSION" \
               --body-file "$RUNNER_TEMP/body.md"
           fi
-
-      - name: Run CI on the release branch
-        # GitHub ignores workflow triggers caused by its own GITHUB_TOKEN, so
-        # opening the PR above does not start CI. The ruleset on main requires
-        # all five checks before a merge, so without this the release PR would
-        # sit permanently unmergeable.
-        #
-        # workflow_dispatch is the documented exception to that rule: it is
-        # the one event the default token may trigger. The run targets this
-        # branch, whose head is the PR's head, so the checks land on the PR
-        # exactly as an automatic run would -- and no personal access token
-        # has to exist for any of it.
-        #
-        # This runs whichever path the step above took, so a second push
-        # refreshes the checks against the new head instead of leaving the
-        # first run's checks attached to a stale commit.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run ci.yml --ref "$GITHUB_REF_NAME"
-          echo "Dispatched CI against $GITHUB_REF_NAME"
 
       - name: Summary
         run: |
