@@ -99,6 +99,42 @@ jobs:
           git branch "$BRANCH"
           git push origin "$BRANCH"
 
+      - name: Open the release PR and start CI on it
+        # This used to be release-pr.yml's job, triggered by the push above.
+        # It never fired: GitHub ignores workflow triggers caused by its own
+        # GITHUB_TOKEN, so a branch pushed by this workflow starts nothing.
+        # The release branch appeared and then nothing happened.
+        #
+        # Doing it here removes the dependency on that event entirely. The
+        # `gh workflow run` call is the documented exception to the same rule
+        # -- the one event the default token may trigger -- and it is what
+        # puts the required checks on the PR so the ruleset on main will allow
+        # a merge.
+        #
+        # release-pr.yml still exists for a release branch pushed by a person,
+        # where the push event does fire; its create-or-skip check keeps the
+        # two from opening duplicate PRs.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+        run: |
+          BRANCH="release/${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          EXISTING="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING is already open for $BRANCH."
+          else
+            sed "s/__VERSION__/$VERSION/g" .github/release-pr-body.md > "$RUNNER_TEMP/body.md"
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "release: $VERSION" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"
+          echo "Dispatched CI against $BRANCH"
+
       - name: Summary
         run: |
           V="${{ steps.version.outputs.version }}"
@@ -109,6 +145,7 @@ jobs:
             echo "- **To:** $V"
             echo "- **Branch:** \`release/$V\`"
             echo
-            echo "A pull request will be opened automatically. Review the changelog,"
-            echo "wait for CI, then merge it — merging is what publishes to npm."
+            echo "A pull request has been opened and CI dispatched against it."
+            echo "Review the changelog, wait for the checks, then merge —"
+            echo "**merging is what publishes to npm.**"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,12 @@
-# Step 2 of 3 — open the release PR.
+# Fallback — open the release PR for a hand-pushed release branch.
 #
-# Fires when release.yml pushes a `release/X.Y.Z` branch. Opens a PR to main
-# so the version bump and changelog get reviewed before anything is published.
+# release.yml opens the PR itself, because a branch it pushes does not fire
+# this workflow: GitHub ignores workflow triggers caused by its own
+# GITHUB_TOKEN. This file covers the other case -- a release branch pushed by
+# a person, where the push event does fire.
+#
+# Both paths use the same create-or-skip check, so they cannot open duplicate
+# PRs if both ever run for the same branch.
 #
 # The guard matters: this only opens a PR when the branch changes nothing but
 # the version and the changelog. A release branch carrying source changes is
