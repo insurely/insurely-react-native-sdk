@@ -29,9 +29,28 @@ export type CollectionStatus =
 export type OpenUrlKind =
   'bankid' | 'mitid' | 'auth-app' | 'browser' | 'redirect' | 'companion-app';
 
-export interface InsurelyResults {
-  /** The collection payload. Cast at the call site; shape is customer-specific. */
-  data: unknown;
+/**
+ * The collection payload, handed over exactly as the Insurely API returned it —
+ * the SDK does not reshape it. It is a flat array of the raw items collected
+ * across every company in the session.
+ *
+ * Its schema is the Wealth/Insurance/Pension API response schema for the API
+ * version pinned in your Blocks configuration, which is why the SDK cannot
+ * narrow it: the same SDK build serves configs on different versions and
+ * different markets. See https://docs.insurely.com for the schema of yours.
+ *
+ * Supply your own type to skip the cast:
+ *
+ * ```tsx
+ * <InsurelyView<MyCollectedItem[]>
+ *   onResults={(results) => save(results.data)} // results.data: MyCollectedItem[]
+ * />
+ * ```
+ *
+ * Note that changing your configuration's API version changes this payload.
+ */
+export interface InsurelyResults<TData = unknown> {
+  data: TData;
 }
 
 export type InsurelyEvent =

@@ -7,6 +7,8 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  type ReactElement,
+  type Ref,
 } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import {
@@ -67,13 +69,13 @@ interface WebViewLoadRequest {
   isTopFrame: boolean;
 }
 
-export interface InsurelyViewProps {
+export interface InsurelyViewProps<TResults = unknown> {
   environment: InsurelyEnvironment;
   config: InsurelyConfig;
   prefill?: InsurelyPrefill;
   /** URL scheme or universal link that returns the user to your app after BankID. */
   bankIdRedirectUrl?: string;
-  onResults?: (results: InsurelyResults) => void;
+  onResults?: (results: InsurelyResults<TResults>) => void;
   onEvent?: (event: InsurelyEvent) => void;
   /**
    * Every failure the SDK detects, including `LOAD_FAILED` when the WebView
@@ -98,7 +100,7 @@ export interface InsurelyHandle {
   reload(): void;
 }
 
-export const InsurelyView = forwardRef<InsurelyHandle, InsurelyViewProps>(
+const InsurelyViewImpl = forwardRef<InsurelyHandle, InsurelyViewProps>(
   function InsurelyViewComponent(
     {
       environment,
@@ -370,6 +372,19 @@ function originOf(url: string): string | null {
   if (!match) return null;
   return `${match[1]!.toLowerCase()}://${match[2]!.toLowerCase()}`;
 }
+
+/**
+ * `forwardRef` returns a non-generic type, so a component defined with it cannot
+ * carry a type parameter through. Re-declaring the export with a generic call
+ * signature is the standard way round that: the runtime value is unchanged, only
+ * its type is widened, so `<InsurelyView<MyItem[]> ... />` narrows `onResults`.
+ *
+ * Without a type argument `TResults` defaults to `unknown`, which is exactly the
+ * signature this component had before -- so existing code keeps compiling.
+ */
+export const InsurelyView = InsurelyViewImpl as <TResults = unknown>(
+  props: InsurelyViewProps<TResults> & { ref?: Ref<InsurelyHandle> }
+) => ReactElement | null;
 
 function isWebUrl(url: string): boolean {
   return originOf(url) !== null;

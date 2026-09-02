@@ -275,6 +275,49 @@ including `PAGE_VIEW`, `COLLECTION_STATUS`, and the final `RESULTS` payload
 `onEvent`. See `InsurelyError` in
 [`src/types/events.ts`](../src/types/events.ts) for the full list.
 
+### The results payload
+
+`onResults` hands over the collection payload exactly as the Insurely API
+returned it — the SDK does not reshape it. It is a flat array of the raw items
+collected across every company in the session.
+
+`results.data` is typed `unknown` by default, and deliberately so: its schema is
+the API response schema for the API version pinned in **your Blocks
+configuration**, not something the SDK chooses. The same SDK build serves
+configs on different versions and different markets, so narrowing it here would
+be wrong for most integrations.
+
+Your schema is published at [docs.insurely.com](https://docs.insurely.com),
+under your market, product and API version — for example
+`/api/fr/wealth/2025-01-01`, which also lists each object type individually. It
+is the same schema a pure-API integration receives. If you are not sure which
+version your configuration pins, ask your Insurely contact.
+
+Supply your own type to skip the cast:
+
+```tsx
+import type { InsurelyResults } from '@insurely/react-native-sdk';
+
+interface CollectedItem {
+  // ...matching the schema for your configuration's API version
+}
+
+<InsurelyView<CollectedItem[]>
+  environment="test"
+  config={config}
+  onResults={(results) => {
+    // results.data is CollectedItem[] — no cast needed
+    save(results.data);
+  }}
+/>;
+```
+
+Without a type argument the behaviour is unchanged, so existing code keeps
+compiling.
+
+**Changing your configuration's API version changes this payload.** Whatever
+model you map into on your side, pin the version it was written against.
+
 ### When Blocks itself fails to load
 
 `LOAD_FAILED` is the one to handle first in production. The whole component
