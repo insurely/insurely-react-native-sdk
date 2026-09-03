@@ -3,6 +3,13 @@
 All notable changes to `@insurely/react-native-sdk`.
 
 
+# [](https://github.com/insurely/insurely-react-native-sdk/compare/v1.0.1...vnull) (2026-09-03)
+
+
+### Features
+
+* let integrators type the results payload ([b63807a](https://github.com/insurely/insurely-react-native-sdk/commit/b63807a74804db5822d814c222ffa2d105e5be65))
+
 # [](https://github.com/insurely/insurely-react-native-sdk/compare/v1.0.0...vnull) (2026-08-27)
 
 
