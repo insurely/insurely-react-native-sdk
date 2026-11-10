@@ -3,6 +3,14 @@
 All notable changes to `@insurely/react-native-sdk`.
 
 
+# [](https://github.com/insurely/insurely-react-native-sdk/compare/v1.1.0...vnull) (2026-11-10)
+
+
+### Features
+
+* add forceOtherDeviceBankId to the data aggregation config ([1108138](https://github.com/insurely/insurely-react-native-sdk/commit/11081388223acd53755d0c852b48c96f2babf775))
+* support Spanish (es) as a language ([4d99609](https://github.com/insurely/insurely-react-native-sdk/commit/4d9960928409acd87162b651c64bf49afab70eb5))
+
 # [](https://github.com/insurely/insurely-react-native-sdk/compare/v1.0.1...vnull) (2026-09-03)
 
 
