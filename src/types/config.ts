@@ -6,6 +6,7 @@ export const LANGUAGES = [
   'da',
   'de',
   'en',
+  'es',
   'et',
   'fr',
   'it',

@@ -22,6 +22,7 @@ describe('validateSettings', () => {
       'da',
       'de',
       'en',
+      'es',
       'et',
       'fr',
       'it',
