@@ -22,6 +22,7 @@ describe('validateSettings', () => {
       'da',
       'de',
       'en',
+      'es',
       'et',
       'fr',
       'it',
@@ -53,6 +54,15 @@ describe('validateSettings', () => {
           },
         }
       )
+    ).not.toThrow();
+  });
+
+  it('accepts forceOtherDeviceBankId', () => {
+    expect(() =>
+      validateSettings({
+        ...valid,
+        dataAggregation: { forceOtherDeviceBankId: true },
+      })
     ).not.toThrow();
   });
 
