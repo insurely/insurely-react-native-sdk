@@ -28,6 +28,8 @@ const dataAggregationConfig = z.strictObject({
   sstSessionId: z.string().optional(),
   legalDocuments: legalDocuments.optional(),
   multiSelect: z.boolean().optional(),
+  // Offers Swedish BankID on another device only, hiding "BankID on this device".
+  forceOtherDeviceBankId: z.boolean().optional(),
   referenceId: z.string().optional(),
   advisorHandle: z.string().optional(),
   additionalLinks: z
