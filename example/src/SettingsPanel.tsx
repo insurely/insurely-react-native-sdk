@@ -97,6 +97,23 @@ export function SettingsPanel({
         />
       </View>
 
+      <View style={styles.row}>
+        <Text style={styles.label}>BankID on other device only</Text>
+        <Switch
+          value={config.dataAggregation?.forceOtherDeviceBankId ?? false}
+          onValueChange={(forceOtherDeviceBankId) =>
+            onChangeConfig({
+              ...config,
+              dataAggregation: {
+                ...config.dataAggregation,
+                forceOtherDeviceBankId,
+              },
+            })
+          }
+          testID="force-other-device-bankid"
+        />
+      </View>
+
       <Text style={styles.heading}>Payload preview (reconstructed)</Text>
       <Text style={styles.note}>
         Not a capture of the real injection — this is what the SDK will send,
