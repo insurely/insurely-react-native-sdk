@@ -45,6 +45,14 @@ describe('parity with the iOS and Android SDKs', () => {
     }
   );
 
+  it('does not send showCloseButton, which neither native SDK sends', () => {
+    const payload = injectedPayload(
+      { ...swedbank.config, showCloseButton: true },
+      undefined
+    ) as { config: Record<string, unknown> };
+    expect(payload.config).not.toHaveProperty('showCloseButton');
+  });
+
   it('omits prefill entirely when none is given', () => {
     const payload = injectedPayload(swedbank.config, undefined) as Record<
       string,

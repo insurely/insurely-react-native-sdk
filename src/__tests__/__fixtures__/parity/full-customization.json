@@ -5,7 +5,6 @@
     "agent": { "type": "sdk" },
     "language": "sv",
     "themeMode": "system",
-    "showCloseButton": true,
     "showBackButton": false,
     "scrollToTopOffset": 24,
     "customization": {

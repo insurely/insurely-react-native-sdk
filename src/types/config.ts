@@ -60,6 +60,10 @@ export const insurelyConfigSchema = z.strictObject({
   resumeCode: z.string().optional(),
   showResumeInput: z.boolean().optional(),
   sendPostMessages: z.boolean().optional(),
+  /**
+   * @deprecated Has no effect, and will be removed. Blocks doesn't show a close
+   * button, so the SDK no longer sends it.
+   */
   showCloseButton: z.boolean().optional(),
   showBackButton: z.boolean().optional(),
   showYearlyPremium: z.boolean().optional(),
