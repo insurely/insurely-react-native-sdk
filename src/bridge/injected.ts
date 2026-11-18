@@ -38,8 +38,12 @@ export function buildInjectedScript({
   // implements. `comingFromPlayStore` (the other field the contract's
   // `agentConfigSchema` allows) is Android-companion-app-specific and is
   // deliberately never sent here.
+  // `showCloseButton` is still accepted, so existing integrations type-check,
+  // but it has no effect and neither native SDK sends it any more.
+  const sentConfig = { ...config };
+  delete sentConfig.showCloseButton;
   const payload = jsonForInlineScript({
-    config: { ...config, agent: { type: 'sdk' } },
+    config: { ...sentConfig, agent: { type: 'sdk' } },
     prefill,
   });
   const assetUrl = `${baseUrl}/assets/${bootstrapAssetFile(baseUrl)}`;

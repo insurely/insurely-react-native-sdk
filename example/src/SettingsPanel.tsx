@@ -88,16 +88,6 @@ export function SettingsPanel({
       </View>
 
       <View style={styles.row}>
-        <Text style={styles.label}>Close button</Text>
-        <Switch
-          value={config.showCloseButton ?? false}
-          onValueChange={(showCloseButton) =>
-            onChangeConfig({ ...config, showCloseButton })
-          }
-        />
-      </View>
-
-      <View style={styles.row}>
         <Text style={styles.label}>BankID on other device only</Text>
         <Switch
           value={config.dataAggregation?.forceOtherDeviceBankId ?? false}
